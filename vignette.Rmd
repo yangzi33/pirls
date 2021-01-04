@@ -1,0 +1,65 @@
+---
+title: "Using a Parsnip Model to Fit and Predict Logistic Lasso"
+subtitle: "STA314, Fall 2020"
+author: "Ziyue Yang"
+date: "November 27^th^, 2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+source("functions.R")
+source("make_tidy.R")
+```
+
+# Intoduction
+
+To use the model in this article, you will need to install package `tidymodels`.
+
+This model allows us to fit and predict a logistic lasso with chosen parameters.
+
+# Using the Model
+
+```{r}
+n <- 1000
+lambda <- 0.3
+
+dat <- tibble(x = seq(-3,3, length.out = n),
+              w = 3*cos(3*seq(-pi,pi, length.out = n)),
+              y = rbinom(n,size = 1, prob = 1/(1 + exp(-w+2*x)) )%>% as.numeric %>% factor,
+              lambda = 0.3,
+              cat = sample(c("a","b","c"), n, replace = TRUE)
+)
+split <- initial_split(dat, strata = c("cat"))
+train <- training(split)
+test <- testing(split)
+rec <- recipe(y ~ . , data = train) %>% step_dummy(all_nominal(), -y) %>% step_zv(all_outcomes()) %>% 
+  step_normalize(all_numeric(), -y) %>%
+  step_intercept()
+
+spec <- PIRLS() %>% set_engine("fit_logistic_lasso")
+  
+fit <- workflow() %>% add_recipe(rec) %>% add_model(spec) %>% fit(train)
+predict(fit, new_data = test) %>% bind_cols(test %>% select(y)) %>% conf_mat(truth = y, estimate = .pred_class)
+
+
+```
+
+
+---
+
+# Functions Behind the Model
+
+Let's begin with the function `fit_logistic_lasso`, which, as its name refers to,
+fits a logistic lasso, based on the following inputs:
+
+* `x`: A matrix of predictors that does not include intercepts.
+* `y`: A vector of data.
+* `lambda`: The penalty term.
+* `beta0`: Initial guess of $\beta$.
+* `eps`: Parameter for stopping criterion.
+* `iter_max`: Maximum number of iterations.
+
+The function `fit_logistic_lasso` returns a list containing three terms: the intercept (`intercept`), beta (`beta`), and lambda (`lambda`).
+
+Here's how the function works: after the inputs have been taken, we update $\beta$ for $n$ times, where $n$ is the integer input of `iter_max`. 
